@@ -13,16 +13,7 @@ dependencies = [
     "scipy",
 ]
 
-[project.optional-dependencies]
-dev = [
-    "pytest",
-    "build",
-]
-
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["lambda_support_recovery*"]
 namespaces = false
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]

@@ -1,11 +1,10 @@
-"""ADMM solver and simulation helpers for Lambda/omega covariance models."""
+"""Fixed-omega ADMM solver and covariance-model simulation helpers."""
 
 import numpy as np
 
+from .config import nonnegative_float
 
 DEFAULT_OMEGA_STAR = 0.1
-
-
 
 
 def van_der_corput(index, base):
@@ -53,14 +52,6 @@ def impose_support(M, mask):
     M_out = M.copy()
     M_out[~mask] = 0.0
     return M_out
-
-def update_omega(Sigma, Lambda, omega_upper=None):
-    n = Sigma.shape[0]
-    residual = Sigma - Lambda.T @ Sigma @ Lambda
-    omega = max(np.trace(residual) / n, 0.0)
-    if omega_upper is not None:
-        omega = min(omega, omega_upper)
-    return omega
 
 
 def covariance_from_lambda_star(Lambda_star, omega):
@@ -131,19 +122,18 @@ def admm_solve(
     max_iter=500,
     tol=1e-6,
     max_restarts=3,
-    omega_fixed=None,
-    omega_upper=None,
+    *,
+    omega_ref,
     init_strategy="halton",
     init_offset=0,
 ):
-    if omega_fixed is not None and omega_fixed < 0.0:
-        raise ValueError("omega_fixed must be nonnegative.")
-    if omega_upper is not None and omega_upper < 0.0:
-        raise ValueError("omega_upper must be nonnegative.")
+    """Fit Lambda on a support while holding omega_ref constant."""
+    omega_ref = nonnegative_float(omega_ref, "omega_ref")
 
     n = Sigma.shape[0]
+    identity = np.eye(n)
+    target = Sigma - omega_ref * identity
     best_Lambda = None
-    best_omega = None
     best_obj = np.inf
 
     for restart_index in range(max_restarts):
@@ -155,7 +145,6 @@ def admm_solve(
             init_strategy,
         )
         alpha = np.zeros((n, n))
-        omega = 0.0 if omega_fixed is None else omega_fixed
         failed = False
 
         for _ in range(max_iter):
@@ -164,25 +153,22 @@ def admm_solve(
             try:
                 # Update Lambda_1
                 SL2 = Sigma @ L2
-                A1 = 2 * SL2 @ SL2.T + beta * np.eye(n)
-                B1 = 2 * SL2 @ (Sigma - omega * np.eye(n)) - alpha + beta * L2
+                A1 = 2 * SL2 @ SL2.T + beta * identity
+                B1 = 2 * SL2 @ target - alpha + beta * L2
                 L1 = np.linalg.solve(A1, B1)
                 L1 = impose_support(L1, support_mask)
 
                 # Update Lambda_2
                 SL1 = Sigma @ L1
-                A2 = 2 * SL1 @ SL1.T + beta * np.eye(n)
-                B2 = 2 * SL1 @ (Sigma - omega * np.eye(n)) + alpha + beta * L1
+                A2 = 2 * SL1 @ SL1.T + beta * identity
+                B2 = 2 * SL1 @ target + alpha + beta * L1
                 L2 = np.linalg.solve(A2, B2)
                 L2 = impose_support(L2, support_mask)
             except np.linalg.LinAlgError:
                 failed = True
                 break
 
-            if omega_fixed is None:
-                omega = update_omega(Sigma, L1, omega_upper=omega_upper)
-
-            if not is_finite_state(L1, L2, alpha, omega):
+            if not is_finite_state(L1, L2, alpha):
                 failed = True
                 break
 
@@ -197,16 +183,15 @@ def admm_solve(
             if np.linalg.norm(L1 - L1_prev, 'fro') < tol:
                 break
 
-        if not failed and is_finite_state(L1, L2, alpha, omega):
-            residual = Sigma - L1.T @ Sigma @ L1 - omega * np.eye(n)
+        if not failed and is_finite_state(L1, L2, alpha):
+            residual = target - L1.T @ Sigma @ L1
             obj = np.linalg.norm(residual, 'fro') ** 2
             if np.isfinite(obj) and obj < best_obj:
                 best_Lambda = L1.copy()
-                best_omega = omega
                 best_obj = obj
 
     if best_Lambda is not None:
-        return best_Lambda, best_omega
+        return best_Lambda, omega_ref
 
     nan_matrix = np.full((n, n), np.nan)
     return nan_matrix, np.nan

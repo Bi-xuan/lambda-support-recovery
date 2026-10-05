@@ -34,7 +34,7 @@ class SupportCurve:
     fitted_lambdas: np.ndarray
     fitted_omegas: np.ndarray
     fit_settings: FitSettings
-    resolved_omega_ref: float | None
+    resolved_omega_ref: float
     allowed_edges: tuple[tuple[int, int], ...]
     support_scope: str = "all"
     nested_supports: bool = True

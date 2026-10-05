@@ -1,4 +1,4 @@
-"""Shared support-mask helpers used by exact and future preselected searches."""
+"""Shared support-mask helpers for exhaustive and nested searches."""
 
 import numpy as np
 

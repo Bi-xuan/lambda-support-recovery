@@ -462,11 +462,9 @@ def _fit(Sigma, mask, settings, *, bootstrap=False):
     options = asdict(settings)
     # Fixed omega is part of the generating model. Sampling may put the
     # empirical minimum eigenvalue below it; do not discard those draws.
-    if settings.omega_fixed is not None:
-        upper = None if bootstrap else float(np.linalg.eigvalsh(Sigma)[0])
-    else:
-        upper = float(np.linalg.eigvalsh(Sigma)[0]) - 1e-6
-    result = solve_support_with_restarts(Sigma, mask, omega_upper=upper, **options)
+    if not bootstrap and settings.omega_fixed > float(np.linalg.eigvalsh(Sigma)[0]):
+        raise ValueError("omega_ref cannot exceed the smallest eigenvalue of the observed covariance.")
+    result = solve_support_with_restarts(Sigma, mask, **options)
     if result is None:
         raise ValueError("No finite feasible support refit; bootstrap selection aborted.")
     return result

@@ -141,9 +141,8 @@ def select_support(
     objective_floor=1e-8, lm_weight=None, lm_mode=None, penalty_config=None,
     top_plateaus=3, bootstrap_replicates=199, bootstrap_alpha=0.05,
     kappa=0.93, support_scope="all", nested_supports=True,
-    preselect_edges=None, refine_after_fixed_omega=False,
     beta=1.0, max_iter=800, tol=1e-7, zero_tol=1e-5, obj_tol=1e-8,
-    min_omega=0.0, init_strategy="halton", random_seed=42,
+    init_strategy="halton", random_seed=42,
     bootstrap_seed=20260913, n_jobs=1, recommendation_factor=2.0,
     return_result=False, progress=None,
 ):
@@ -180,9 +179,8 @@ def select_support(
         sigma_hat, num_samples=num_samples, max_restarts=max_restarts,
         omega_star=omega_star, omega_ref=omega_ref, fit_omega_ref=fit_omega_ref,
         kappa=kappa, support_scope=support_scope, nested_supports=nested_supports,
-        preselect_edges=preselect_edges, refine_after_fixed_omega=refine_after_fixed_omega,
         beta=beta, max_iter=max_iter, tol=tol, zero_tol=zero_tol, obj_tol=obj_tol,
-        min_omega=min_omega, init_strategy=init_strategy, random_seed=random_seed,
+        init_strategy=init_strategy, random_seed=random_seed,
         n_jobs=n_jobs, progress=progress,
     )
     return select_from_curve(

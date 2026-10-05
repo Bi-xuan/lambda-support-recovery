@@ -8,17 +8,13 @@ from math import comb
 import numpy as np
 
 from ..admm import admm_solve
+from ..config import nonnegative_float
 from ..objective import frobenius_objective
 from ..supports.common import (
-    off_diagonal_edges, support_mask_from_edges, upper_triangular_edges,
+    off_diagonal_edges, upper_triangular_edges,
     validate_support_mask,
 )
 from ..supports.exact import get_all_supports, get_upper_triangular_supports
-from ..supports.preselected import (
-    count_preselected_supports,
-    get_preselected_supports,
-    normalize_preselected_edges,
-)
 
 
 
@@ -34,12 +30,11 @@ def _preserve_random_state(function):
     return wrapped
 
 
-PRESELECT_DIRECTION_POLICIES = ("directed", "both_per_pair")
 SUPPORT_SCOPES = ("all", "upper")
 
 
 def resolve_omega_ref(Sigma_hat, omega_ref=None, fit_omega_ref=False, kappa=0.93):
-    """Return the fixed reference, or None when omega is fitted by ADMM."""
+    """Resolve omega once, before any fixed-reference Lambda fits."""
     if fit_omega_ref:
         if omega_ref is not None:
             raise ValueError("fit_omega_ref=True requires omega_ref=None.")
@@ -47,9 +42,9 @@ def resolve_omega_ref(Sigma_hat, omega_ref=None, fit_omega_ref=False, kappa=0.93
             raise ValueError("kappa must be finite and in (0, 1].")
         omega_ref = float(kappa * np.linalg.eigvalsh(Sigma_hat)[0])
 
-    if omega_ref is not None and (not np.isfinite(omega_ref) or omega_ref < 0.0):
-        raise ValueError("omega_ref must be finite and nonnegative.")
-    return omega_ref
+    if omega_ref is None:
+        raise ValueError("omega_ref must be supplied when fit_omega_ref=False; omega is always fixed during fitting.")
+    return nonnegative_float(omega_ref, "omega_ref")
 
 
 def support_edges_from_mask(mask):
@@ -76,20 +71,6 @@ def is_finite_candidate(Lambda, omega, obj):
     )
 
 
-def satisfies_hard_constraints(
-    omega,
-    min_omega,
-    omega_upper=None,
-):
-    if omega < min_omega:
-        return False
-
-    if omega_upper is not None and omega > omega_upper:
-        return False
-
-    return True
-
-
 def print_optimization_result(Lambda, omega, obj):
     if Lambda is None or omega is None or not np.isfinite(obj):
         print("No candidate satisfied the hard constraints.")
@@ -108,9 +89,7 @@ def solve_support_with_restarts(
     tol,
     zero_tol,
     max_restarts,
-    min_omega,
-    omega_fixed=None,
-    omega_upper=None,
+    omega_fixed,
     init_strategy="halton",
 ):
     runs = []
@@ -123,8 +102,7 @@ def solve_support_with_restarts(
             max_iter=max_iter,
             tol=tol,
             max_restarts=1,
-            omega_fixed=omega_fixed,
-            omega_upper=omega_upper,
+            omega_ref=omega_fixed,
             init_strategy=init_strategy,
             init_offset=restart_index,
         )
@@ -132,13 +110,6 @@ def solve_support_with_restarts(
         obj = frobenius_objective(Sigma, Lambda_thr, omega)
 
         if not is_finite_candidate(Lambda_thr, omega, obj):
-            continue
-
-        if not satisfies_hard_constraints(
-            omega,
-            min_omega,
-            omega_upper=omega_upper,
-        ):
             continue
 
         runs.append((Lambda_thr, omega, obj))
@@ -160,9 +131,7 @@ def solve_support_worker(task):
         tol,
         zero_tol,
         max_restarts,
-        min_omega,
         omega_fixed,
-        omega_upper,
         seed,
         init_strategy,
     ) = task
@@ -178,9 +147,7 @@ def solve_support_worker(task):
         tol=tol,
         zero_tol=zero_tol,
         max_restarts=max_restarts,
-        min_omega=min_omega,
         omega_fixed=omega_fixed,
-        omega_upper=omega_upper,
         init_strategy=init_strategy,
     )
 
@@ -230,132 +197,9 @@ def update_best_support(
     return best_Lambda, best_omega, best_obj, best_mask
 
 
-def validate_preselect_direction_policy(direction_policy):
-    if direction_policy not in PRESELECT_DIRECTION_POLICIES:
-        raise ValueError(
-            "preselect_direction_policy must be one of "
-            f"{PRESELECT_DIRECTION_POLICIES}."
-        )
-
-
 def validate_support_scope(support_scope):
     if support_scope not in SUPPORT_SCOPES:
         raise ValueError(f"support_scope must be one of {SUPPORT_SCOPES}.")
-
-
-def select_preselected_edge_scores(
-    edge_scores,
-    preselect_k,
-    direction_policy="directed",
-):
-    """Select directed edges from one-edge scores under the chosen policy."""
-    validate_preselect_direction_policy(direction_policy)
-
-    if preselect_k is None:
-        raise ValueError("preselect_k must be set.")
-
-    sorted_scores = sorted(edge_scores, key=lambda item: (item[1], item[0]))
-    if direction_policy == "directed":
-        max_edges = len(sorted_scores)
-        if not (1 <= preselect_k <= max_edges):
-            raise ValueError(f"preselect_k must be between 1 and {max_edges}.")
-        return sorted_scores[:preselect_k]
-
-    pair_scores = {}
-    for edge, score in sorted_scores:
-        pair = tuple(sorted(edge))
-        pair_scores.setdefault(pair, []).append((edge, score))
-
-    ranked_pairs = sorted(
-        pair_scores.values(),
-        key=lambda pair_entries: (pair_entries[0][1], pair_entries[0][0]),
-    )
-    max_pairs = len(ranked_pairs)
-    if not (1 <= preselect_k <= max_pairs):
-        raise ValueError(f"preselect_k must be between 1 and {max_pairs}.")
-
-    selected = []
-    for pair_entries in ranked_pairs[:preselect_k]:
-        selected.extend(pair_entries)
-    return selected
-
-
-def rank_preselected_edges(
-    Sigma,
-    preselect_k,
-    beta=1.0,
-    max_iter=500,
-    tol=1e-6,
-    zero_tol=1e-5,
-    max_restarts=3,
-    min_omega=1e-8,
-    omega_fixed=None,
-    omega_upper=None,
-    n_jobs=1,
-    random_seed=None,
-    init_strategy="halton",
-    direction_policy="directed",
-):
-    """Rank directed off-diagonal edges by their one-edge support objective."""
-    n = Sigma.shape[0]
-    edges = off_diagonal_edges(n)
-
-    validate_preselect_direction_policy(direction_policy)
-    if direction_policy == "directed":
-        max_preselect_k = len(edges)
-    else:
-        max_preselect_k = n * (n - 1) // 2
-
-    if preselect_k is None:
-        raise ValueError("preselect_k must be set.")
-    if not (1 <= preselect_k <= max_preselect_k):
-        raise ValueError(f"preselect_k must be between 1 and {max_preselect_k}.")
-
-    def iter_preselection_tasks():
-        for edge_index, edge in enumerate(edges):
-            yield (
-                edge_index,
-                Sigma,
-                support_mask_from_edges(n, [edge]),
-                beta,
-                max_iter,
-                tol,
-                zero_tol,
-                max_restarts,
-                min_omega,
-                omega_fixed,
-                omega_upper,
-                None if random_seed is None else random_seed + edge_index,
-                init_strategy,
-            )
-
-    if n_jobs is None:
-        max_workers = os.cpu_count() or 1
-    else:
-        max_workers = n_jobs
-
-    if max_workers is not None and max_workers < 1:
-        raise ValueError("n_jobs must be positive or None.")
-
-    if max_workers == 1:
-        edge_results = map(solve_support_worker, iter_preselection_tasks())
-    else:
-        edge_results = iter_parallel_support_results(
-            iter_preselection_tasks(),
-            max_workers,
-        )
-
-    edge_scores = []
-    for edge_index, _, result in edge_results:
-        obj = np.inf if result is None else result[2]
-        edge_scores.append((edges[edge_index], obj))
-
-    selected = select_preselected_edge_scores(
-        edge_scores,
-        preselect_k,
-        direction_policy=direction_policy,
-    )
-    return [edge for edge, _ in selected], [score for _, score in selected]
 
 
 @_preserve_random_state
@@ -368,17 +212,11 @@ def optimize_lambda(
     zero_tol=1e-5,
     obj_tol=1e-8,
     max_restarts=3,
-    min_omega=1e-8,
-    omega_upper_gap=1e-6,
     omega_ref=None,
     support_iterator=None,
     n_jobs=1,
     random_seed=None,
     init_strategy="halton",
-    refine_after_fixed_omega=False,
-    preselect_k=None,
-    preselect_edges=None,
-    preselect_direction_policy="directed",
     return_metadata=False,
     support_scope="all",
     previous_support_mask=None,
@@ -396,10 +234,6 @@ def optimize_lambda(
     within the selected scope and choose the strict minimum fitted objective.
     """
     metadata = {
-        "preselect_k": preselect_k,
-        "preselect_direction_policy": preselect_direction_policy,
-        "preselected_edges": None,
-        "preselected_scores": None,
         "selected_support_mask": None,
         "selected_support_edges": None,
         "support_scope": support_scope,
@@ -414,24 +248,13 @@ def optimize_lambda(
     n_edge = D_m - 1
     lambda_min_sigma = np.min(np.linalg.eigvalsh(Sigma))
     omega_ref = resolve_omega_ref(Sigma, omega_ref, fit_omega_ref, kappa)
-    free_omega_upper = lambda_min_sigma - omega_upper_gap
-    omega_upper = lambda_min_sigma if omega_ref is not None else free_omega_upper
-    validate_preselect_direction_policy(preselect_direction_policy)
     validate_support_scope(support_scope)
 
     if previous_support_mask is not None and support_iterator is not None:
         raise ValueError("previous_support_mask cannot be combined with support_iterator.")
 
-    if support_scope == "upper" and (
-        support_iterator is not None
-        or preselect_k is not None
-        or preselect_edges is not None
-    ):
-        raise ValueError(
-            "support_scope='upper' applies only to exhaustive support search "
-            "and cannot be combined with support_iterator or preselection "
-            "arguments."
-        )
+    if support_scope == "upper" and support_iterator is not None:
+        raise ValueError("support_scope='upper' cannot be combined with support_iterator.")
 
     if support_scope == "upper":
         max_upper_edges = n * (n - 1) // 2
@@ -441,88 +264,15 @@ def optimize_lambda(
                 f"{max_upper_edges}."
             )
 
-    if refine_after_fixed_omega and omega_ref is None:
-        raise ValueError(
-            "refine_after_fixed_omega=True requires omega_ref to be set. "
-            "Set omega_ref to a fixed value, or set "
-            "refine_after_fixed_omega=False when running the first stage "
-            "with omega_ref=None."
-        )
-
-    if omega_upper < min_omega:
+    if omega_ref > lambda_min_sigma:
         return result_tuple(None, None, np.inf)
-
-    if omega_ref is not None and omega_ref > lambda_min_sigma:
-        return result_tuple(None, None, np.inf)
-
-    if refine_after_fixed_omega and free_omega_upper < min_omega:
-        return result_tuple(None, None, np.inf)
-
-    if support_iterator is not None and (
-        preselect_k is not None or preselect_edges is not None
-    ):
-        raise ValueError(
-            "Use either support_iterator or preselection arguments, not both."
-        )
-
-    if preselect_edges is not None:
-        selected_edges = normalize_preselected_edges(n, preselect_edges)
-        if n_edge > len(selected_edges):
-            raise ValueError(
-                "D_m requires more off-diagonal edges than were preselected: "
-                f"n_edge={n_edge}, preselected={len(selected_edges)}."
-            )
-        metadata["preselect_k"] = len(selected_edges)
-        metadata["preselected_edges"] = selected_edges
-        support_iterator = lambda n_arg, n_edge_arg: get_preselected_supports(
-            n_arg,
-            n_edge_arg,
-            selected_edges,
-        )
-    elif preselect_k is not None:
-        if preselect_direction_policy == "both_per_pair":
-            preselect_edge_count = 2 * preselect_k
-        else:
-            preselect_edge_count = preselect_k
-
-        if preselect_edge_count < n_edge:
-            raise ValueError(
-                "Preselection must retain at least D_m - 1 directed edges: "
-                f"retained={preselect_edge_count}, n_edge={n_edge}."
-            )
-
-        selected_edges, selected_scores = rank_preselected_edges(
-            Sigma,
-            preselect_k,
-            beta=beta,
-            max_iter=max_iter,
-            tol=tol,
-            zero_tol=zero_tol,
-            max_restarts=max_restarts,
-            min_omega=min_omega,
-            omega_fixed=omega_ref,
-            omega_upper=omega_upper,
-            n_jobs=n_jobs,
-            random_seed=random_seed,
-            init_strategy=init_strategy,
-            direction_policy=preselect_direction_policy,
-        )
-        metadata["preselected_edges"] = selected_edges
-        metadata["preselected_scores"] = selected_scores
-        support_iterator = lambda n_arg, n_edge_arg: get_preselected_supports(
-            n_arg,
-            n_edge_arg,
-            selected_edges,
-        )
 
     nested_edges = None
     if previous_support_mask is not None:
-        allowed_edges = metadata["preselected_edges"]
-        if allowed_edges is None:
-            allowed_edges = (
-                upper_triangular_edges(n) if support_scope == "upper"
-                else off_diagonal_edges(n)
-            )
+        allowed_edges = (
+            upper_triangular_edges(n) if support_scope == "upper"
+            else off_diagonal_edges(n)
+        )
         previous_support_mask = validate_support_mask(
             previous_support_mask, n, n_edge - 1, allowed_edges,
         )
@@ -563,9 +313,7 @@ def optimize_lambda(
                 tol,
                 zero_tol,
                 max_restarts,
-                min_omega,
                 omega_ref,
-                omega_upper,
                 None if random_seed is None else random_seed + support_index,
                 init_strategy,
             )
@@ -585,11 +333,6 @@ def optimize_lambda(
         support_count = comb(n * (n - 1), n_edge)
     elif support_iterator is get_upper_triangular_supports:
         support_count = comb(n * (n - 1) // 2, n_edge)
-    elif metadata["preselected_edges"] is not None:
-        support_count = count_preselected_supports(
-            n_edge,
-            metadata["preselected_edges"],
-        )
 
     if max_workers == 1 or support_count == 1:
         support_results = map(solve_support_worker, iter_support_tasks())
@@ -619,34 +362,6 @@ def optimize_lambda(
             result,
             obj_tol,
         )
-
-    if (
-        refine_after_fixed_omega
-        and omega_ref is not None
-        and best_mask is not None
-    ):
-        if random_seed is not None:
-            final_seed_offset = support_count if support_count is not None else 0
-            np.random.seed(random_seed + final_seed_offset)
-
-        final_result = solve_support_with_restarts(
-            Sigma,
-            best_mask,
-            beta=beta,
-            max_iter=max_iter,
-            tol=tol,
-            zero_tol=zero_tol,
-            max_restarts=max_restarts,
-            min_omega=min_omega,
-            omega_fixed=None,
-            omega_upper=free_omega_upper,
-            init_strategy=init_strategy,
-        )
-
-        if final_result is None:
-            return result_tuple(None, None, np.inf)
-
-        best_Lambda, best_omega, best_obj = final_result
 
     if best_mask is not None:
         metadata["selected_support_mask"] = best_mask.copy()

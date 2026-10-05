@@ -52,25 +52,20 @@ def validate_covariance(value, *, name="sigma_hat", n=None):
 class FitSettings:
     """Settings shared by curve fitting and fixed-support bootstrap refitting."""
 
-    omega_fixed: float | None = 1.0
+    omega_fixed: float = 1.0
     beta: float = 1.0
     max_iter: int = 800
     tol: float = 1e-7
     zero_tol: float = 1e-5
     max_restarts: int = 10
-    min_omega: float = 0.0
     init_strategy: str = "halton"
 
     def __post_init__(self):
         for name in ("max_iter", "max_restarts"):
             object.__setattr__(self, name, positive_integer(getattr(self, name), name))
-        for name in ("beta", "tol", "zero_tol", "min_omega"):
+        for name in ("beta", "tol", "zero_tol"):
             object.__setattr__(self, name, nonnegative_float(getattr(self, name), name, positive=name in ("beta", "tol")))
-        if self.omega_fixed is not None:
-            fixed = nonnegative_float(self.omega_fixed, "omega_fixed")
-            object.__setattr__(self, "omega_fixed", fixed)
-            if fixed < self.min_omega:
-                raise ValueError("omega_fixed must be greater than or equal to min_omega.")
+        object.__setattr__(self, "omega_fixed", nonnegative_float(self.omega_fixed, "omega_fixed"))
         if self.init_strategy not in ("halton", "random"):
             raise ValueError("init_strategy must be 'halton' or 'random'.")
 

@@ -6,21 +6,13 @@ procedures are adapted from the MS-S research project.
 
 ## Installation
 
-Use Python 3.10 or newer. From the repository root:
+Use Python 3.10 or newer. Install directly from GitHub:
 
 ```bash
-python -m pip install .
+python -m pip install "git+https://github.com/Bi-xuan/lambda-support-recovery.git"
 ```
 
-For development, testing, and building:
-
-```bash
-python -m pip install -e ".[dev]"
-python -m pytest
-python -m build
-```
-
-NumPy and SciPy are the runtime dependencies. Plotting packages are not required.
+NumPy and SciPy are installed automatically. Plotting packages are not required.
 
 ## Main function
 
@@ -38,14 +30,12 @@ Model dimension D_m is one plus the number of off-diagonal positions.
 
 The defaults estimate a fixed reference as `0.93 * lambda_min(sigma_hat)`,
 construct a greedy forward-nested objective/support curve, then select a
-dimension with Plateau_Bootstrap. The reference remains fixed; optional
-free-omega refinement is disabled. At each dimension, the search chooses the
-best one-edge extension of the preceding support.
+dimension with Plateau_Bootstrap. The reference remains fixed. At each
+dimension, the search chooses the best one-edge extension of the preceding
+support.
 
 The default scope permits every directed off-diagonal position. Set
 `support_scope="upper"` when an upper-triangular structure is appropriate.
-`preselect_edges=[(i, j), ...]` restricts an `"all"` search to specified directed
-positions. Indices are zero-based.
 
 ## Detailed results
 
@@ -113,7 +103,7 @@ The retained penalty is `sqrt(D_m) * (K + sqrt(2 * v * Lm))`. With constant Lm,
 changing penalty quantities rescales the penalty axis and need not change the
 dimension. Support-count weighting can change the penalty's relative shape.
 
-## Known or free omega
+## Fixed omega
 
 ```python
 support = select_support(
@@ -127,10 +117,10 @@ silently changes `omega_ref`. A numeric reference requires
 `fit_omega_ref=False`. The observed fit requires the reference to be at most
 the smallest eigenvalue of `sigma_hat`; equality is permitted.
 
-For free-omega fitting, use `omega_ref=None, fit_omega_ref=False`.
-`refine_after_fixed_omega=True` performs the support search with a fixed
-reference, then refits each chosen mask with free omega. Bootstrap uses the
-curve's final settings for all refits.
+With the default `omega_ref=None, fit_omega_ref=True`, the reference is estimated
+once as `kappa * lambda_min(sigma_hat)`. Both selection methods hold that value
+fixed during support fitting and bootstrap refits; ADMM only updates Lambda.
+With `fit_omega_ref=False`, a numeric `omega_ref` must be supplied.
 
 ## Plain Plateau without bootstrap
 
@@ -192,11 +182,8 @@ configuration names.
 | `kappa` | 0.93 | Estimated-reference multiplier |
 | `max_iter`, `tol` | 800, 1e-7 | Solver budget and tolerance |
 | `beta`, `zero_tol`, `obj_tol` | 1, 1e-5, 1e-8 | ADMM and numerical tolerances |
-| `min_omega` | 0 | Lower fitting noise bound |
 | `init_strategy` | halton | Random starts also available for plain Plateau |
 | `support_scope`, `nested_supports` | all, True | Allowed positions and nesting |
-| `preselect_edges` | None | Optional permitted directed edge list |
-| `refine_after_fixed_omega` | False | Free-omega final fits |
 | `random_seed`, `bootstrap_seed` | 42, 20260913 | Random-start and bootstrap seeds |
 | `n_jobs` | 1 | Process workers |
 | `recommendation_factor` | 2 | Plain Plateau center multiplier |
@@ -225,13 +212,11 @@ unstable null models, and failed bootstrap refits raise explicit errors.
 Invalid curve fits retain Inf objectives and invalid masks; a failed nested
 fit blocks later extensions. No alternative method is substituted silently.
 
-## Example and verification
+## Example
 
-Run `python examples/basic_selection.py` for a small demonstration using
-reduced solver budgets and bootstrap draws. The tests adapt MS-S regressions
-and compare objectives, masks, penalties, dimensions, and bootstrap gains with
-stored synthetic MS-S reference cases. No live MS-S checkout is needed for
-testing. The original project remains unchanged.
+See [basic_selection.py](examples/basic_selection.py) for a complete example
+using an empirical covariance and both selection methods. It uses reduced
+solver budgets and bootstrap draws to keep the demonstration quick.
 
 ## Licensing
 

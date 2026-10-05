@@ -1,2 +1,1 @@
-recursive-include tests *.py *.npz *.md
 recursive-include examples *.py *.md
