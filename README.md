@@ -1,20 +1,14 @@
 # lambda-support-recovery
 
-Select the model support of a Lambda matrix from an empirical covariance matrix.
-The solver, nested support search, theorem penalty, and Plateau/Plateau_Bootstrap
-procedures are adapted from the MS-S research project.
+Recover the model support of $\Lambda$ from an empirical covariance $\hat{\Sigma}$.
 
-## Installation
+## Simplest usage
 
-Use Python 3.10 or newer. Install directly from GitHub:
+Python 3.10+ is required. NumPy and SciPy are installed automatically.
 
 ```bash
 python -m pip install "git+https://github.com/Bi-xuan/lambda-support-recovery.git"
 ```
-
-NumPy and SciPy are installed automatically. Plotting packages are not required.
-
-## Main function
 
 ```python
 from lambda_support_recovery import select_support
@@ -22,203 +16,103 @@ from lambda_support_recovery import select_support
 support = select_support(sigma_hat, num_samples=N)
 ```
 
-`sigma_hat` must be a real, finite, symmetric, positive-definite matrix of size
-at least 2. `num_samples` is the original integer sample size, at least 2.
-The result is an n-by-n Boolean model mask including all diagonal positions.
-Permitted coefficients remain in the support even when fitted to zero.
-Model dimension D_m is one plus the number of off-diagonal positions.
+Pass a real, finite, symmetric, positive-definite covariance of size at least 2
+and its original sample size `N >= 2`. Defaults use a nested support search,
+an estimated fixed omega, and Plateau_Bootstrap.
 
-The defaults estimate a fixed reference as `0.93 * lambda_min(sigma_hat)`,
-construct a greedy forward-nested objective/support curve, then select a
-dimension with Plateau_Bootstrap. The reference remains fixed. At each
-dimension, the search chooses the best one-edge extension of the preceding
-support.
+## Results
 
-The default scope permits every directed off-diagonal position. Set
-`support_scope="upper"` when an upper-triangular structure is appropriate.
-
-## Detailed results
+The default output is an $n\times n$ Boolean support mask including the diagonal.
+For fitted parameters and selection details:
 
 ```python
 result = select_support(sigma_hat, num_samples=N, return_result=True)
 
-result.support
-result.selected_dimension
-result.selected_edges
-result.fitted_lambda
-result.fitted_omega
-result.resolved_omega_ref
-result.curve.raw_objectives
-result.penalty_constants
-result.bootstrap_comparisons
+result.support                 # Selected mask
+result.selected_dimension      # D_m = 1 + number of off-diagonal edges
+result.selected_edges          # Off-diagonal (i, j) pairs; zero-based
+result.fitted_lambda           # Fitted Lambda matrix
+result.fitted_omega             # Fixed omega used for fitting
+result.curve.raw_objectives     # Objective curve
+result.bootstrap_comparisons   # Bootstrap results; empty for plain Plateau
 ```
 
-Curve/result arrays are read-only copies. The mask-only return is a writable
-copy. The API does not read or write files and is silent unless a callback
-such as `progress=print` is supplied.
+## Personalization
 
-## Configurable penalty quantities
+Add these keywords to `select_support(sigma_hat, num_samples=N, ...)`:
 
-By default, **the observed covariance** supplies its matrix norms and
-eigenvalue summaries. The Lambda bound in the theorem penalty defaults to
-**L = 1**, the noise bound to **r = 1**, and the confidence constant to **xi = 10**.
-These are penalty inputs, not additional constraints on ADMM. Data-derived
-quantities do not claim to be population upper bounds.
+| Choice | Keywords |
+| --- | --- |
+| All directed positions / upper-triangular positions | `support_scope="all"` / `support_scope="upper"` |
+| Known omega | `omega_star=known_omega, omega_ref=known_omega, fit_omega_ref=False` |
+| Unknown omega | No change: `fit_omega_ref=True` estimates `omega_ref = kappa * lambda_min(sigma_hat)` once |
+| Constant $L_m$ | `lm_mode="constant", lm_weight=1.0`, with `method="plateau"` or `method="plateau_bootstrap"` |
+| Dimension-dependent $L_m$ | `method="plateau", lm_mode="support-count", lm_weight=0.1` |
+| Parallel execution | `n_jobs=4` for up to four CPU worker processes |
 
-```python
-from lambda_support_recovery import PenaltyConfig, select_support
+Omega stays fixed during all fits. A known reference must not exceed
+`lambda_min(sigma_hat)`. Support-count weighting uses
+$L_m(D_m)=w\binom{M}{D_m-1}$, where `w = lm_weight` and $M$ is the number of
+permitted off-diagonal positions.
 
-penalty = PenaltyConfig(
-    sigma=None,          # observed covariance (default)
-    lambda_bound=0.8,    # theorem L; default 1
-    noise_bound=1.0,     # theorem r; default 1
-    xi=10.0,
-)
-support = select_support(sigma_hat, num_samples=N, penalty_config=penalty)
-```
+For `n_jobs > 1`, call the package inside `if __name__ == "__main__":` in a
+Python script. Use a positive integer; `-1` and `None` are unsupported.
 
-Set `sigma=1.0` to use the identity as the penalty reference, another positive
-scalar for that scalar times the identity, or a positive-definite n-by-n
-matrix for a custom reference. Only the penalty changes; fitting uses
-`sigma_hat` throughout.
+## Configurable parameters
 
-All six numerical summaries can be overridden individually:
+All are keywords of `select_support`; only `sigma_hat` and `num_samples` are required.
 
-```python
-penalty = PenaltyConfig(
-    lambda_bound=0.8,
-    lambda_sum=4.0, lambda_inf_norm=2.0, lambda_2_norm=3.0,
-    sigma_fro_norm=6.0, sigma_op_norm=4.0, sigma_trace=10.0,
-)
-```
-
-The original `lambda_*` quantities summarize **covariance eigenvalues**, not
-the fitted Lambda matrix: their defaults are the eigenvalue sum, maximum
-absolute value, and Euclidean norm. The `sigma_*` quantities are the reference's
-Frobenius norm, operator norm, and trace. `lambda_bound` is the configurable
-bound associated with the Lambda model. The theorem requires
-`0 < lambda_bound < sqrt(n)`.
-
-The retained penalty is `sqrt(D_m) * (K + sqrt(2 * v * Lm))`. With constant Lm,
-changing penalty quantities rescales the penalty axis and need not change the
-dimension. Support-count weighting can change the penalty's relative shape.
-
-## Fixed omega
-
-```python
-support = select_support(
-    sigma_hat, num_samples=N,
-    omega_star=known_omega, omega_ref=known_omega, fit_omega_ref=False,
-)
-```
-
-`omega_star` is optional known-noise provenance; it never generates data or
-silently changes `omega_ref`. A numeric reference requires
-`fit_omega_ref=False`. The observed fit requires the reference to be at most
-the smallest eigenvalue of `sigma_hat`; equality is permitted.
-
-With the default `omega_ref=None, fit_omega_ref=True`, the reference is estimated
-once as `kappa * lambda_min(sigma_hat)`. Both selection methods hold that value
-fixed during support fitting and bootstrap refits; ADMM only updates Lambda.
-With `fit_omega_ref=False`, a numeric `omega_ref` must be supplied.
-
-## Plain Plateau without bootstrap
-
-```python
-support = select_support(sigma_hat, num_samples=N, method="plateau", lm_weight=0.1)
-```
-
-Plain Plateau defaults to support-count weighting:
-`Lm(D_m) = lm_weight * C(M, D_m - 1)`, where M is the number of allowed
-off-diagonal positions; the default weight is 0.1. This counts all supports in
-the allowed space, not just the extensions searched along the greedy path.
-
-Set `lm_mode="constant"` to use constant Lm (default 1). A constant weight
-rescales the penalty axis without changing plateau widths. Ordinary Plateau
-preserves MS-S's default selection at twice the geometric center of its widest
-bounded plateau. Set `recommendation_factor=1.0` to select at the center.
-
-Plateau_Bootstrap defaults to constant Lm=1 and rejects support-count weighting.
-The only selection methods are plain `"plateau"` and `"plateau_bootstrap"`
-(also accepted as `"plateau-bootstrap"`). Capitalized names are accepted too.
-The low-level numerical entry points in `selection.py` are `select_plateau`
-and `select_plateau_bootstrap`.
-
-## Reuse a curve
-
-```python
-from lambda_support_recovery import compute_support_curve, select_from_curve
-
-curve = compute_support_curve(sigma_hat, num_samples=N)
-bootstrap = select_from_curve(curve, return_result=True)
-plateau = select_from_curve(
-    curve, method="plateau", lm_weight=0.2,
-    penalty_config=PenaltyConfig(lambda_bound=0.8), return_result=True,
-)
-```
-
-This avoids repeating support reconstruction. Bootstrap still performs its
-fixed-mask refits. A recorded original sample size cannot be replaced by a
-different value. If the curve was built without `num_samples`, supply it when
-selecting.
-
-## Parameters and defaults
-
-Python keywords use lowercase names corresponding to the scripts' uppercase
-configuration names.
-
-| Parameter | Default | Meaning |
+| Parameter | Default | Purpose |
 | --- | --- | --- |
-| `max_restarts` | 10 | Initializations per support and bootstrap refit |
-| `omega_star` | None | Optional known-noise provenance |
-| `omega_ref`, `fit_omega_ref` | None, True | Estimate and fix reference omega |
-| `objective_floor` | 1e-8 | Screening floor; raw gains stay unchanged |
-| `lm_weight` | 1 / 0.1 | Constant / support-count weight |
-| `lm_mode` | constant / support-count | Bootstrap / plain Plateau default |
-| `top_plateaus` | 3 | Bootstrap candidates screened |
-| `bootstrap_replicates` | 199 | Draws per comparison |
-| `bootstrap_alpha` | 0.05 | Strict rejection threshold |
-| `penalty_config` | PenaltyConfig() | Covariance reference and penalty bounds |
-| `kappa` | 0.93 | Estimated-reference multiplier |
-| `max_iter`, `tol` | 800, 1e-7 | Solver budget and tolerance |
-| `beta`, `zero_tol`, `obj_tol` | 1, 1e-5, 1e-8 | ADMM and numerical tolerances |
-| `init_strategy` | halton | Random starts also available for plain Plateau |
-| `support_scope`, `nested_supports` | all, True | Allowed positions and nesting |
-| `random_seed`, `bootstrap_seed` | 42, 20260913 | Random-start and bootstrap seeds |
-| `n_jobs` | 1 | Process workers |
-| `recommendation_factor` | 2 | Plain Plateau center multiplier |
-| `return_result`, `progress` | False, None | Detailed result and optional callback |
+| `method` | `"plateau-bootstrap"` | Bootstrap or plain `"plateau"`; underscore alias accepted |
+| `support_scope` | `"all"` | Directed or `"upper"` positions |
+| `nested_supports` | `True` | Greedy nested search; `False` searches all supports per dimension |
+| `omega_star` | `None` | Record known noise |
+| `omega_ref`, `fit_omega_ref` | `None`, `True` | Supply or estimate fixed noise |
+| `kappa` | `0.93` | Omega-estimation multiplier |
+| `max_restarts` | `10` | Initializations per support |
+| `beta` | `1.0` | ADMM penalty parameter |
+| `max_iter`, `tol` | `800`, `1e-7` | Iteration limit and convergence tolerance |
+| `zero_tol`, `obj_tol` | `1e-5`, `1e-8` | Coefficient threshold and support-comparison tolerance |
+| `init_strategy` | `"halton"` | Halton or `"random"` initialization |
+| `objective_floor` | `1e-8` | Objective floor for plateau screening |
+| `lm_mode` | `None` | Resolves to constant for bootstrap, support-count for Plateau |
+| `lm_weight` | `None` | Resolves to 1 for constant, 0.1 for support-count |
+| `penalty_config` | `None` | Resolves to `PenaltyConfig()` below |
+| `top_plateaus` | `3` | Bootstrap candidates |
+| `bootstrap_replicates`, `bootstrap_alpha` | `199`, `0.05` | Replicates and rejection threshold |
+| `random_seed`, `bootstrap_seed` | `42`, `20260913` | Random-initialization and bootstrap seeds |
+| `n_jobs` | `1` | CPU worker processes |
+| `recommendation_factor` | `2.0` | Plain Plateau: multiplier of the widest plateau's geometric center; use 1 to select at the center |
+| `return_result`, `progress` | `False`, `None` | Detailed output and optional callback, e.g. `print` |
 
-Bootstrap-only settings are unused by plain Plateau; the recommendation factor
-is unused by bootstrap. Bootstrap requires nested supports and Halton starts.
-In executable scripts using `n_jobs > 1`, invoke the API under an
-`if __name__ == "__main__":` guard.
+Bootstrap requires `nested_supports=True`, `init_strategy="halton"`, and constant
+$L_m$. Bootstrap settings apply only to bootstrap; `recommendation_factor` applies
+only to plain Plateau.
 
-## Bootstrap assumptions and failures
+Configure penalty references with
+`penalty_config=PenaltyConfig(...)`, importing `PenaltyConfig` from the package:
 
-Bootstrap assumes iid zero-mean Gaussian observations and covariance
-`X.T @ X / N`. It screens bounded log-width plateaus and tests adjacent
-candidates in decreasing dimension. Both original masks are refitted for
-every draw; screening and support reconstruction are not repeated.
-The original raw objectives are used for gains regardless of the floor.
+| `PenaltyConfig` field | Default | Purpose |
+| --- | --- | --- |
+| `sigma` | `None` | Observed covariance; alternatively a covariance matrix or positive scalar times identity |
+| `lambda_bound`, `noise_bound`, `xi` | `1.0`, `1.0`, `10.0` | Theorem constants $L$, $r$, $\xi$ |
+| `lambda_sum`, `lambda_inf_norm`, `lambda_2_norm` | `None` | Derive covariance eigenvalue sum, maximum absolute value, and Euclidean norm; override individually |
+| `sigma_fro_norm`, `sigma_op_norm`, `sigma_trace` | `None` | Derive covariance Frobenius norm, operator norm, and trace; override individually |
 
-The p-value is `(1 + exceedances) / (B + 1)`. Only `p < alpha` retains the larger
-model and stops; otherwise selection moves to the next comparison and
-eventually the smallest candidate. A single candidate needs no comparison.
-There is no multiple-testing correction.
+The `lambda_*` summaries refer to covariance eigenvalues. `lambda_bound` is the
+Lambda bound and must satisfy $0<L<\sqrt{n}$.
 
-Invalid configurations, absent bounded plateaus, ambiguous plain-Plateau ties,
-unstable null models, and failed bootstrap refits raise explicit errors.
-Invalid curve fits retain Inf objectives and invalid masks; a failed nested
-fit blocks later extensions. No alternative method is substituted silently.
+## Non-configurable hyperparameters
 
-## Example
+These numerical settings and algorithm rules are fixed internally:
 
-See [basic_selection.py](examples/basic_selection.py) for a complete example
-using an empirical covariance and both selection methods. It uses reduced
-solver budgets and bootstrap draws to keep the demonstration quick.
-
-## Licensing
-
-A license has not yet been selected. Add the chosen LICENSE file and package
-license metadata before distributing the implementation for reuse.
+| Setting | Value / rule |
+| --- | --- |
+| Covariance symmetry tolerance | `rtol=1e-10`, `atol=1e-12` |
+| Plain Plateau width-tie tolerance | `rtol=1e-12`, `atol=1e-12`; tied maxima raise an error |
+| Bootstrap refit-objective tolerance | `rtol=1e-5`, `atol=1e-10` |
+| Plateau ranking | Largest bounded log width, $\log(c_{right}/c_{left})$ |
+| Bootstrap sampling | Zero-mean iid Gaussian model; $\hat{\Sigma}=X^TX/N$ |
+| Bootstrap null stability | Spectral radius of Lambda below 1 and positive omega |
+| Bootstrap p-value | $(1+\text{exceedances})/(B+1)$; retain the larger model only when $p<\alpha$ |
