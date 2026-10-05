@@ -149,7 +149,10 @@ preserves MS-S's default selection at twice the geometric center of its widest
 bounded plateau. Set `recommendation_factor=1.0` to select at the center.
 
 Plateau_Bootstrap defaults to constant Lm=1 and rejects support-count weighting.
-Method names `"Plateau"` and `"Plateau_Bootstrap"` are also accepted.
+The only selection methods are plain `"plateau"` and `"plateau_bootstrap"`
+(also accepted as `"plateau-bootstrap"`). Capitalized names are accepted too.
+The low-level numerical entry points in `selection.py` are `select_plateau`
+and `select_plateau_bootstrap`.
 
 ## Reuse a curve
 

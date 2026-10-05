@@ -134,7 +134,7 @@ def test_numpy_random_state_is_preserved(sigma):
 @pytest.mark.parametrize("options", [
     {"num_samples": 1}, {"num_samples": True}, {"max_restarts": 0},
     {"omega_ref": 0.4}, {"omega_ref": 100, "fit_omega_ref": False},
-    {"method": "unknown"}, {"lm_weight": 0}, {"lm_mode": "support-count"},
+    {"method": "unknown"}, {"method": "window"}, {"lm_weight": 0}, {"lm_mode": "support-count"},
     {"nested_supports": False}, {"init_strategy": "random"},
     {"bootstrap_alpha": 1}, {"bootstrap_replicates": 0}, {"top_plateaus": 0},
     {"bootstrap_seed": -1}, {"n_jobs": 0}, {"objective_floor": np.nan},

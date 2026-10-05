@@ -9,7 +9,7 @@ from .config import PenaltyConfig, build_penalty_constants, nonnegative_float, p
 from .curve import compute_support_curve
 from .penalty import compute_K, compute_v
 from .results import SelectionResult, SupportCurve
-from .selection import select_minimal_scale, select_plateau_bootstrap
+from .selection import select_plateau, select_plateau_bootstrap
 
 
 def floor_objective_values(objective_values, objective_floor=1e-8):
@@ -114,8 +114,8 @@ def select_from_curve(
             progress=progress,
         )
     else:
-        diagnostics = select_minimal_scale(
-            curve.dimensions, screened, penalties, method="plateau",
+        diagnostics = select_plateau(
+            curve.dimensions, screened, penalties,
             recommendation_factor=recommendation_factor,
             require_monotonic_penalty=lm_mode == "constant",
         )

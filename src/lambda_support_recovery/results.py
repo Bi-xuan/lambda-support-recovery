@@ -7,7 +7,7 @@ import numpy as np
 
 from .config import FitSettings, validate_covariance, positive_integer
 from .penalty import PenaltyConstants
-from .selection import BootstrapSelection, ScalingSelection
+from .selection import BootstrapSelection, PlateauScaleSelection
 from .supports.common import validate_support_mask
 
 
@@ -106,7 +106,7 @@ class SelectionResult:
     lm_mode: str
     objective_floor: float
     screened_objectives: np.ndarray
-    diagnostics: BootstrapSelection | ScalingSelection
+    diagnostics: BootstrapSelection | PlateauScaleSelection
 
     def __post_init__(self):
         for name in ("support", "penalty_values", "lm_values", "screened_objectives"):
