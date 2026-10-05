@@ -1,0 +1,19 @@
+# Local environments
+.venv/
+venv/
+
+# Python caches and generated packaging files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Coverage output
+.coverage
+.coverage.*
+htmlcov/
+
+# macOS metadata
+.DS_Store
