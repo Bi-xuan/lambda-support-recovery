@@ -1,9 +1,13 @@
 # Tests
 
-No tests are implemented yet.
+Run `python -m pytest` after installing the development dependencies.
 
-When numerical code is added, adapt the relevant MS-S regression tests and add
-checks for the public API, input validation, known and estimated omega, both
-selection methods, reproducibility, and installation of the built package.
-Compare objective values, support masks, selected dimensions, and bootstrap
-results against fixed reference cases from the original project.
+Numerical regressions are adapted from MS-S for the ADMM solver, support
+enumeration, nested recovery, fitted references, theorem penalty, dimension
+paths, and fixed-mask bootstrap calibration. Public API tests cover defaults,
+known noise, cached selection, penalty overrides, validation, original sample
+size, and preservation of selected model masks.
+
+`test_reference_equivalence.py` compares real numerical fits and bootstrap
+results with the small reference cases in `fixtures/`. No live MS-S checkout
+is needed.
