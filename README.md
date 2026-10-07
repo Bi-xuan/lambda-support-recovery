@@ -28,47 +28,35 @@ For fitted parameters and selection details:
 ```python
 result = select_support(sigma_hat, num_samples=N, return_result=True)
 
-result.support                 # Selected mask
+result.support                 # Selected support
 result.selected_dimension      # D_m = 1 + number of off-diagonal edges
 result.selected_edges          # Off-diagonal (i, j) pairs; zero-based
 result.fitted_lambda           # Fitted Lambda matrix
 result.fitted_omega             # Fixed omega used for fitting
-result.curve.raw_objectives     # Objective curve
+result.curve.raw_objectives     # Unpenalized objective curve
 result.bootstrap_comparisons   # Bootstrap results; empty for plain Plateau
 ```
 
-## Personalization
+## Important parameters
 
-Add these keywords to `select_support(sigma_hat, num_samples=N, ...)`:
+| parameter | options | default | instruction |
+| --- | --- | --- | --- |
+| `method` | `"plateau-bootstrap"`, `"plateau"` | `"plateau-bootstrap"` | `"plateau-bootstrap"` screens the widest plateaus and uses bootstrap tests to compare candidate supports; `"plateau"` selects at twice the geometric center of the widest bounded plateau by default. `"plateau_bootstrap"` is an accepted alias. |
+| `support_scope` | `"all"`, `"upper"` | `"all"` | `"all"` allows every directed off-diagonal position; `"upper"` allows only positions above the diagonal. |
+| `omega_star` | `None`, nonnegative number | `None` | `None` records no known population noise; a number records the known noise for reference only. To use known noise for fitting, also set `omega_ref` to that value and `fit_omega_ref=False`. |
+| `omega_ref` | `None`, nonnegative number | `None` | `None` requires `fit_omega_ref=True` to estimate the noise reference; a number supplies the fixed noise used during all fits and requires `fit_omega_ref=False`. The supplied value must not exceed `lambda_min(sigma_hat)`. |
+| `fit_omega_ref` | `True`, `False` | `True` | `True` estimates `omega_ref = kappa * lambda_min(sigma_hat)` once (default `kappa=0.93`) and requires `omega_ref=None`; `False` uses the supplied numeric `omega_ref`. Omega stays fixed during all fits in either case. |
+| `lm_mode` | `None`, `"constant"`, `"support-count"` | `None` | `None` chooses `"constant"` for bootstrap and `"support-count"` for plain Plateau. `"constant"` uses $L_m=w$; `"support-count"` uses $L_m(D_m)=w\binom{M}{D_m-1}$, where `w = lm_weight` and $M$ is the number of permitted off-diagonal positions. Bootstrap requires `"constant"`. |
+| `lm_weight` | `None`, positive number | `None` | `None` resolves to `1.0` for constant weighting or `0.1` for support-count weighting; a positive number sets the multiplier $w$ in the selected $L_m$ formula. |
+| `n_jobs` | Positive integer | `1` | `1` uses one worker process; larger values allow up to that many CPU worker processes. For `n_jobs > 1`, call the package inside `if __name__ == "__main__":` in a Python script. `-1` and `None` are unsupported. |
 
-| Choice | Keywords |
-| --- | --- |
-| All directed positions / upper-triangular positions | `support_scope="all"` / `support_scope="upper"` |
-| Known omega | `omega_star=known_omega, omega_ref=known_omega, fit_omega_ref=False` |
-| Unknown omega | No change: `fit_omega_ref=True` estimates `omega_ref = kappa * lambda_min(sigma_hat)` once |
-| Constant $L_m$ | `lm_mode="constant", lm_weight=1.0`, with `method="plateau"` or `method="plateau_bootstrap"` |
-| Dimension-dependent $L_m$ | `method="plateau", lm_mode="support-count", lm_weight=0.1` |
-| Parallel execution | `n_jobs=4` for up to four CPU worker processes |
-
-Omega stays fixed during all fits. A known reference must not exceed
-`lambda_min(sigma_hat)`. Support-count weighting uses
-$L_m(D_m)=w\binom{M}{D_m-1}$, where `w = lm_weight` and $M$ is the number of
-permitted off-diagonal positions.
-
-For `n_jobs > 1`, call the package inside `if __name__ == "__main__":` in a
-Python script. Use a positive integer; `-1` and `None` are unsupported.
-
-## Configurable parameters
+## Other configurable parameters
 
 All are keywords of `select_support`; only `sigma_hat` and `num_samples` are required.
 
 | Parameter | Default | Purpose |
 | --- | --- | --- |
-| `method` | `"plateau-bootstrap"` | Bootstrap or plain `"plateau"`; underscore alias accepted |
-| `support_scope` | `"all"` | Directed or `"upper"` positions |
 | `nested_supports` | `True` | Greedy nested search; `False` searches all supports per dimension |
-| `omega_star` | `None` | Record known noise |
-| `omega_ref`, `fit_omega_ref` | `None`, `True` | Supply or estimate fixed noise |
 | `kappa` | `0.93` | Omega-estimation multiplier |
 | `max_restarts` | `10` | Initializations per support |
 | `beta` | `1.0` | ADMM penalty parameter |
@@ -76,13 +64,10 @@ All are keywords of `select_support`; only `sigma_hat` and `num_samples` are req
 | `zero_tol`, `obj_tol` | `1e-5`, `1e-8` | Coefficient threshold and support-comparison tolerance |
 | `init_strategy` | `"halton"` | Halton or `"random"` initialization |
 | `objective_floor` | `1e-8` | Objective floor for plateau screening |
-| `lm_mode` | `None` | Resolves to constant for bootstrap, support-count for Plateau |
-| `lm_weight` | `None` | Resolves to 1 for constant, 0.1 for support-count |
 | `penalty_config` | `None` | Resolves to `PenaltyConfig()` below |
 | `top_plateaus` | `3` | Bootstrap candidates |
 | `bootstrap_replicates`, `bootstrap_alpha` | `199`, `0.05` | Replicates and rejection threshold |
 | `random_seed`, `bootstrap_seed` | `42`, `20260913` | Random-initialization and bootstrap seeds |
-| `n_jobs` | `1` | CPU worker processes |
 | `recommendation_factor` | `2.0` | Plain Plateau: multiplier of the widest plateau's geometric center; use 1 to select at the center |
 | `return_result`, `progress` | `False`, `None` | Detailed output and optional callback, e.g. `print` |
 
