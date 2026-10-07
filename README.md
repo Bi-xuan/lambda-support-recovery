@@ -2,6 +2,10 @@
 
 Recover the model support of $\Lambda$ from an empirical covariance $\hat{\Sigma}$.
 
+For common usage, the first two sections, [“Simplest usage”](#simplest-usage)
+and [“Results”](#results), suffice. The remaining sections cover advanced usage
+for configuring the package's important methodological options.
+
 ## Simplest usage
 
 Python 3.10+ is required. NumPy and SciPy are installed automatically.
@@ -39,9 +43,9 @@ result.bootstrap_comparisons   # Bootstrap results; empty for plain Plateau
 
 ## Important parameters
 
-| parameter | options | default | instruction |
+| Parameter | Options | Default | Instruction |
 | --- | --- | --- | --- |
-| `method` | `"plateau-bootstrap"`, `"plateau"` | `"plateau-bootstrap"` | `"plateau-bootstrap"` screens the widest plateaus and uses bootstrap tests to compare candidate supports; `"plateau"` selects at twice the geometric center of the widest bounded plateau by default. `"plateau_bootstrap"` is an accepted alias. |
+| `method` | `"plateau-bootstrap"`, `"plateau"` | `"plateau-bootstrap"` | `"plateau-bootstrap"` screens the widest plateaus and uses bootstrap tests to compare candidate supports; `"plateau"` selects at the geometric center of the widest bounded plateau. `"plateau_bootstrap"` is an accepted alias. |
 | `support_scope` | `"all"`, `"upper"` | `"all"` | `"all"` allows every directed off-diagonal position; `"upper"` allows only positions above the diagonal. |
 | `omega_star` | `None`, nonnegative number | `None` | `None` records no known population noise; a number records the known noise for reference only. To use known noise for fitting, also set `omega_ref` to that value and `fit_omega_ref=False`. |
 | `omega_ref` | `None`, nonnegative number | `None` | `None` requires `fit_omega_ref=True` to estimate the noise reference; a number supplies the fixed noise used during all fits and requires `fit_omega_ref=False`. The supplied value must not exceed `lambda_min(sigma_hat)`. |
@@ -54,36 +58,34 @@ result.bootstrap_comparisons   # Bootstrap results; empty for plain Plateau
 
 All are keywords of `select_support`; only `sigma_hat` and `num_samples` are required.
 
-| Parameter | Default | Purpose |
-| --- | --- | --- |
-| `nested_supports` | `True` | Greedy nested search; `False` searches all supports per dimension |
-| `kappa` | `0.93` | Omega-estimation multiplier |
-| `max_restarts` | `10` | Initializations per support |
-| `beta` | `1.0` | ADMM penalty parameter |
-| `max_iter`, `tol` | `800`, `1e-7` | Iteration limit and convergence tolerance |
-| `zero_tol`, `obj_tol` | `1e-5`, `1e-8` | Coefficient threshold and support-comparison tolerance |
-| `init_strategy` | `"halton"` | Halton or `"random"` initialization |
-| `objective_floor` | `1e-8` | Objective floor for plateau screening |
-| `penalty_config` | `None` | Resolves to `PenaltyConfig()` below |
-| `top_plateaus` | `3` | Bootstrap candidates |
-| `bootstrap_replicates`, `bootstrap_alpha` | `199`, `0.05` | Replicates and rejection threshold |
-| `random_seed`, `bootstrap_seed` | `42`, `20260913` | Random-initialization and bootstrap seeds |
-| `recommendation_factor` | `2.0` | Plain Plateau: multiplier of the widest plateau's geometric center; use 1 to select at the center |
-| `return_result`, `progress` | `False`, `None` | Detailed output and optional callback, e.g. `print` |
+| Parameter | Options | Default | Purpose |
+| --- | --- | --- | --- |
+| `nested_supports` | `True`, `False` | `True` | Greedy nested search; `False` searches all supports per dimension |
+| `kappa` | Number in `(0, 1]` | `0.93` | Omega-estimation multiplier |
+| `max_restarts` | Positive integer | `10` | Initializations per support |
+| `beta` | Positive finite number | `1.0` | ADMM penalty parameter |
+| `max_iter`, `tol` | Positive integer; positive finite number, respectively | `800`, `1e-7` | Iteration limit and convergence tolerance |
+| `zero_tol`, `obj_tol` | Nonnegative finite numbers | `1e-5`, `1e-8` | Coefficient threshold and support-comparison tolerance |
+| `init_strategy` | `"halton"`, `"random"` | `"halton"` | Halton or random initialization |
+| `objective_floor` | Nonnegative finite number | `1e-8` | Objective floor for plateau screening |
+| `penalty_config` | `None`, `PenaltyConfig(...)` | `None` | Resolves to `PenaltyConfig()` below |
+| `top_plateaus` | Positive integer | `3` | Bootstrap candidates |
+| `bootstrap_replicates`, `bootstrap_alpha` | Positive integer; number in `(0, 1)`, respectively | `199`, `0.05` | Replicates and rejection threshold |
+| `random_seed`, `bootstrap_seed` | Nonnegative integers | `42`, `20260913` | Random-initialization and bootstrap seeds |
+| `return_result`, `progress` | `True` or `False`; `None` or callable, respectively | `False`, `None` | Detailed output and optional callback, e.g. `print` |
 
 Bootstrap requires `nested_supports=True`, `init_strategy="halton"`, and constant
-$L_m$. Bootstrap settings apply only to bootstrap; `recommendation_factor` applies
-only to plain Plateau.
+$L_m$. Bootstrap settings apply only to bootstrap.
 
 Configure penalty references with
 `penalty_config=PenaltyConfig(...)`, importing `PenaltyConfig` from the package:
 
-| `PenaltyConfig` field | Default | Purpose |
-| --- | --- | --- |
-| `sigma` | `None` | Observed covariance; alternatively a covariance matrix or positive scalar times identity |
-| `lambda_bound`, `noise_bound`, `xi` | `1.0`, `1.0`, `10.0` | Theorem constants $L$, $r$, $\xi$ |
-| `lambda_sum`, `lambda_inf_norm`, `lambda_2_norm` | `None` | Derive covariance eigenvalue sum, maximum absolute value, and Euclidean norm; override individually |
-| `sigma_fro_norm`, `sigma_op_norm`, `sigma_trace` | `None` | Derive covariance Frobenius norm, operator norm, and trace; override individually |
+| `PenaltyConfig` field | Options | Default | Purpose |
+| --- | --- | --- | --- |
+| `sigma` | `None`, positive finite scalar, symmetric positive-definite matrix with the same shape as `sigma_hat` | `None` | Observed covariance; alternatively a covariance matrix or positive scalar times identity |
+| `lambda_bound`, `noise_bound`, `xi` | Positive finite numbers; `lambda_bound` must also be less than $\sqrt{n}$ | `1.0`, `1.0`, `10.0` | Theorem constants $L$, $r$, $\xi$ |
+| `lambda_sum`, `lambda_inf_norm`, `lambda_2_norm` | `None`, nonnegative finite numbers | `None` | Derive covariance eigenvalue sum, maximum absolute value, and Euclidean norm; override individually |
+| `sigma_fro_norm`, `sigma_op_norm`, `sigma_trace` | `None`, nonnegative finite numbers | `None` | Derive covariance Frobenius norm, operator norm, and trace; override individually |
 
 The `lambda_*` summaries refer to covariance eigenvalues. `lambda_bound` is the
 Lambda bound and must satisfy $0<L<\sqrt{n}$.

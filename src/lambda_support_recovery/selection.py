@@ -1,8 +1,8 @@
 """Plain Plateau and Plateau_Bootstrap dimension selection.
 
 Both procedures use the exact lower envelope of penalized objectives and rank
-bounded plateaus by absolute log-width. Plain Plateau selects at a configurable
-multiple of the widest plateau's geometric center. Plateau_Bootstrap compares
+bounded plateaus by absolute log-width. Plain Plateau selects at the widest
+plateau's geometric center. Plateau_Bootstrap compares
 the top plateau models using sequential fixed-support bootstrap tests.
 """
 
@@ -20,9 +20,6 @@ from scipy.stats import wishart
 from .config import FitSettings
 from .optimizers.support_search import solve_support_with_restarts
 from .supports.common import off_diagonal_edges, validate_support_mask
-
-
-DEFAULT_RECOMMENDATION_FACTOR = 2.0
 
 
 @dataclass(frozen=True)
@@ -70,12 +67,9 @@ class DimensionPath:
 class PlateauScaleSelection:
     """Penalty scale and dimension selected by the plain Plateau procedure."""
 
-    minimal_scale: float
-    recommended_scale: float
+    selected_scale: float
     selected_dimension: int | float
-    recommendation_factor: float
     plateau_selection: PlateauSelection
-    recommendation_within_plateau: bool
     method: str = "plateau"
 
 
@@ -125,13 +119,6 @@ def _finite_nonnegative_float(value, name: str) -> float:
         raise ValueError(f"{name} must be a finite, nonnegative number.") from exc
     if not np.isfinite(value) or value < 0.0:
         raise ValueError(f"{name} must be a finite, nonnegative number.")
-    return value
-
-
-def _positive_float(value, name: str) -> float:
-    value = _finite_nonnegative_float(value, name)
-    if value == 0.0:
-        raise ValueError(f"{name} must be positive.")
     return value
 
 
@@ -392,19 +379,13 @@ def select_plateau(
     objective_values,
     penalty_values,
     *,
-    recommendation_factor: float = DEFAULT_RECOMMENDATION_FACTOR,
     require_monotonic_penalty: bool = True,
 ) -> PlateauScaleSelection:
     """Select from the widest bounded plateau of the penalized dimension path.
 
-    The geometric center estimates the minimal penalty scale. The default
-    final scale is twice that center, preserving MS-S's ordinary Plateau rule.
-    Set recommendation_factor=1 to select at the center itself. Missing bounded
-    plateaus and tied maximum log-widths raise explicit errors.
+    Select at the geometric center of that plateau. Missing bounded plateaus
+    and tied maximum log-widths raise explicit errors.
     """
-    recommendation_factor = _positive_float(
-        recommendation_factor, "recommendation_factor",
-    )
     path = build_dimension_path(
         d_m_values, objective_values, penalty_values,
         require_monotonic_penalty=require_monotonic_penalty,
@@ -413,19 +394,11 @@ def select_plateau(
     if not plateau.succeeded:
         raise ValueError(f"Plateau selection failed: {plateau.failure_reason}")
 
-    minimal_scale = float(plateau.center)
-    recommended_scale = recommendation_factor * minimal_scale
-    if not np.isfinite(recommended_scale):
-        raise ValueError("The recommended scale is not finite.")
+    selected_scale = float(plateau.center)
     return PlateauScaleSelection(
-        minimal_scale=minimal_scale,
-        recommended_scale=float(recommended_scale),
-        selected_dimension=path.dimension_at(recommended_scale),
-        recommendation_factor=recommendation_factor,
+        selected_scale=selected_scale,
+        selected_dimension=path.dimension_at(selected_scale),
         plateau_selection=plateau,
-        recommendation_within_plateau=bool(
-            plateau.left <= recommended_scale < plateau.right
-        ),
     )
 
 

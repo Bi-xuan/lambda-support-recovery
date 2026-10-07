@@ -26,7 +26,7 @@ def floor_objective_values(objective_values, objective_floor=1e-8):
 
 def _selection_options(method, lm_mode, lm_weight, objective_floor,
                        top_plateaus, bootstrap_replicates, bootstrap_alpha,
-                       bootstrap_seed, n_jobs, recommendation_factor):
+                       bootstrap_seed, n_jobs):
     if not isinstance(method, str):
         raise ValueError("method must be 'plateau-bootstrap' or 'plateau'.")
     method = method.strip().lower().replace("_", "-")
@@ -42,7 +42,6 @@ def _selection_options(method, lm_mode, lm_weight, objective_floor,
     weight = nonnegative_float(weight if lm_weight is None else lm_weight, "lm_weight", positive=True)
     objective_floor = nonnegative_float(objective_floor, "objective_floor")
     positive_integer(n_jobs, "n_jobs")
-    nonnegative_float(recommendation_factor, "recommendation_factor", positive=True)
     if method == "plateau-bootstrap":
         positive_integer(top_plateaus, "top_plateaus")
         positive_integer(bootstrap_replicates, "bootstrap_replicates")
@@ -58,14 +57,14 @@ def select_from_curve(
     objective_floor=1e-8, lm_weight=None, lm_mode=None,
     penalty_config=None, top_plateaus=3, bootstrap_replicates=199,
     bootstrap_alpha=0.05, bootstrap_seed=20260913, n_jobs=1,
-    recommendation_factor=2.0, return_result=False, progress=None,
+    return_result=False, progress=None,
 ):
     """Select from a stored curve without repeating support reconstruction.
 
     Bootstrap still refits the screened fixed masks on simulated covariances.
     The recorded original sample size cannot be replaced by a different N.
-    Plain Plateau uses support-count weighting by default and selects at twice
-    the geometric center of its widest bounded plateau, preserving MS-S.
+    Plain Plateau uses support-count weighting by default and selects at
+    the geometric center of its widest bounded plateau.
     """
     if not isinstance(curve, SupportCurve):
         raise TypeError("curve must be a SupportCurve returned by compute_support_curve.")
@@ -77,7 +76,6 @@ def select_from_curve(
     method, lm_mode, weight, objective_floor = _selection_options(
         method, lm_mode, lm_weight, objective_floor, top_plateaus,
         bootstrap_replicates, bootstrap_alpha, bootstrap_seed, n_jobs,
-        recommendation_factor,
     )
     if not isinstance(return_result, (bool, np.bool_)):
         raise ValueError("return_result must be a boolean.")
@@ -116,7 +114,6 @@ def select_from_curve(
     else:
         diagnostics = select_plateau(
             curve.dimensions, screened, penalties,
-            recommendation_factor=recommendation_factor,
             require_monotonic_penalty=lm_mode == "constant",
         )
     selected = int(diagnostics.selected_dimension)
@@ -143,7 +140,7 @@ def select_support(
     kappa=0.93, support_scope="all", nested_supports=True,
     beta=1.0, max_iter=800, tol=1e-7, zero_tol=1e-5, obj_tol=1e-8,
     init_strategy="halton", random_seed=42,
-    bootstrap_seed=20260913, n_jobs=1, recommendation_factor=2.0,
+    bootstrap_seed=20260913, n_jobs=1,
     return_result=False, progress=None,
 ):
     """Select the Lambda model support from an empirical covariance and N.
@@ -167,7 +164,6 @@ def select_support(
     normalized, resolved_mode, weight, objective_floor = _selection_options(
         method, lm_mode, lm_weight, objective_floor, top_plateaus,
         bootstrap_replicates, bootstrap_alpha, bootstrap_seed, n_jobs,
-        recommendation_factor,
     )
     if not isinstance(return_result, (bool, np.bool_)):
         raise ValueError("return_result must be a boolean.")
@@ -188,6 +184,6 @@ def select_support(
         lm_weight=weight, lm_mode=resolved_mode, penalty_config=penalty_config,
         top_plateaus=top_plateaus, bootstrap_replicates=bootstrap_replicates,
         bootstrap_alpha=bootstrap_alpha, bootstrap_seed=bootstrap_seed,
-        n_jobs=n_jobs, recommendation_factor=recommendation_factor,
+        n_jobs=n_jobs,
         return_result=return_result, progress=progress,
     )
